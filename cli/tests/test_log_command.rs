@@ -1589,6 +1589,47 @@ fn test_log_diff_stat_width() {
 }
 
 #[test]
+fn test_log_available_width() {
+    let test_env = TestEnvironment::default();
+    test_env.run_jj_in(".", ["git", "init", "repo"]).success();
+    let work_dir = test_env.work_dir("repo");
+    let render = |args: &[&str], columns: u32| {
+        work_dir.run_jj_with(|cmd| cmd.args(args).env("COLUMNS", columns.to_string()))
+    };
+
+    work_dir.run_jj(["new", "--no-edit", "root()"]).success();
+    work_dir.run_jj(["new", "--no-edit", "root()"]).success();
+    work_dir.run_jj(["new", "--no-edit", "root()"]).success();
+    work_dir.run_jj(["new", "root()+"]).success();
+
+    insta::assert_snapshot!(render(&["log", "-T", "available_width()"], 20), @"
+    @        11
+    ├─┬─┬─╮
+    │ │ │ ○  11
+    │ │ ○ │  11
+    │ │ ├─╯
+    │ ○ │  13
+    │ ├─╯
+    ○ │  15
+    ├─╯
+    ◆  17
+    [EOF]
+    ");
+    insta::assert_snapshot!(render(&["log", "-T", "available_width()", "--no-graph"], 20), @"
+    ------- stderr -------
+    Error: Failed to parse template: width not available
+    Caused by:  --> 1:1
+      |
+    1 | available_width()
+      | ^-------------^
+      |
+      = width not available
+    [EOF]
+    [exit status: 1]
+    ");
+}
+
+#[test]
 fn test_elided() {
     // Test that elided commits are shown as synthetic nodes.
     let test_env = TestEnvironment::default();

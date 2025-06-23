@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use std::cmp::min;
+use std::collections::HashMap;
 
 use clap_complete::ArgValueCandidates;
 use clap_complete::ArgValueCompleter;
@@ -45,6 +46,8 @@ use crate::diff_util::DiffFormatArgs;
 use crate::formatter::FormatterExt as _;
 use crate::graphlog::GraphStyle;
 use crate::graphlog::get_graphlog;
+use crate::templater::PropertyPlaceholder;
+use crate::templater::TemplatePropertyExt as _;
 use crate::templater::TemplateRenderer;
 use crate::ui::Ui;
 
@@ -198,6 +201,7 @@ pub(crate) async fn cmd_log(
     let with_content_format = LogContentFormat::new(ui, settings)?;
 
     let template: TemplateRenderer<Commit>;
+    let width_placeholder = PropertyPlaceholder::<i64>::new();
     let node_template: TemplateRenderer<Option<Commit>>;
     {
         let language = workspace_command.commit_template_language();
@@ -205,8 +209,13 @@ pub(crate) async fn cmd_log(
             Some(value) => value.clone(),
             None => settings.get_string("templates.log")?,
         };
+        let mut locals = HashMap::new();
+        let available_width: &dyn Fn() -> _ = &|| width_placeholder.clone().into_dyn_wrapped();
+        if !args.no_graph {
+            locals.insert("$available_width", available_width);
+        }
         template = workspace_command
-            .parse_template(ui, &language, &template_string)?
+            .parse_template_with_locals(ui, &language, locals, &template_string)?
             .labeled(["log", "commit"]);
         node_template = workspace_command
             .parse_template(ui, &language, &settings.get_string("templates.log_node")?)?
@@ -275,6 +284,7 @@ pub(crate) async fn cmd_log(
                 let commit = store.get_commit_async(&key.0).await?;
                 let within_graph =
                     with_content_format.sub_width(graph.width(&key, &graphlog_edges));
+                width_placeholder.set(within_graph.width().try_into().unwrap());
                 within_graph
                     .write(ui.new_formatter(&mut buffer).as_mut(), async |formatter| {
                         template.format(&commit, formatter)
